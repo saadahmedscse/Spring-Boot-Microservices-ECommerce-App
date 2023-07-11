@@ -1,5 +1,7 @@
 package org.saadahmedev.service;
 
+import org.saadahmedev.dto.ApiResponseBody;
+import org.saadahmedev.dto.InventoryResponse;
 import org.saadahmedev.dto.OrderLineItemDto;
 import org.saadahmedev.dto.OrderRequest;
 import org.saadahmedev.model.Order;
@@ -8,7 +10,10 @@ import org.saadahmedev.repository.OrderRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.reactive.function.client.WebClient;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -18,13 +23,33 @@ public class OrderService {
     @Autowired
     private OrderRepository orderRepository;
 
-    public void placeOrder(OrderRequest orderRequest) {
+    @Autowired
+    private WebClient webClient;
+
+    public ApiResponseBody placeOrder(OrderRequest orderRequest) {
         Order order = Order.builder()
                 .orderNumber(UUID.randomUUID().toString())
                 .orderLineItems(orderRequest.getOrderLineItemDtos()
                         .stream().map(this::mapToOrderLineItem).toList()).build();
 
-        orderRepository.save(order);
+        List<String> skuCodes = order.getOrderLineItems().stream().map(OrderLineItem::getSkuCode).toList();
+
+        //Call Inventory Service and Place order if item is in stock
+        InventoryResponse[] inventoryResponseArray = webClient.get()
+                .uri("http://localhost:8082/api/inventory",
+                        uriBuilder -> uriBuilder.queryParam("skuCode", skuCodes).build())
+                .retrieve()
+                .bodyToMono(InventoryResponse[].class)
+                .block();
+
+        assert inventoryResponseArray != null;
+        boolean allItemsAreInStock = Arrays.stream(inventoryResponseArray).allMatch(InventoryResponse::isInStock);
+
+        if (allItemsAreInStock) {
+            orderRepository.save(order);
+            return new ApiResponseBody(true, "Order placed successfully");
+        }
+        return new ApiResponseBody(false, "Product is not available in stock");
     }
 
     private OrderLineItem mapToOrderLineItem(OrderLineItemDto orderLineItemDto) {
