@@ -17,7 +17,6 @@ public class OrderController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponseBody placeOrder(OrderRequest orderRequest) {
-        orderService.placeOrder(orderRequest);
-        return new ApiResponseBody(true, "Order created successfully");
+        return orderService.placeOrder(orderRequest);
     }
 }
